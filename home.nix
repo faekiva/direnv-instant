@@ -58,6 +58,10 @@ in
       default = config.programs.kitty.enable;
     };
 
+    enableIterm2Integration = (mkEnableOption "iterm2 integration") // {
+      default = config.programs.iterm2.enable;
+    };
+
     settings = {
       use_cache = (mkEnableOption "cached environment loading for instant prompts") // {
         default = true;

@@ -16,6 +16,7 @@ pub enum Multiplexer {
     Zellij,
     Wezterm,
     Kitty,
+    Iterm2,
 }
 
 impl Multiplexer {
@@ -36,6 +37,10 @@ impl Multiplexer {
             return Some(Self::Kitty);
         }
 
+        if env::var("ITERM_PROFILE").is_ok() {
+            return Some(Self::Iterm2);
+        }
+
         None
     }
 
@@ -51,6 +56,7 @@ impl Multiplexer {
             Multiplexer::Zellij => "zellij",
             Multiplexer::Wezterm => "wezterm",
             Multiplexer::Kitty => "kitty",
+            Multiplexer::Iterm2 => "sh",
         };
 
         let mux_args = match self {
@@ -66,6 +72,18 @@ impl Multiplexer {
             ],
             Multiplexer::Wezterm => vec!["cli", "split-pane", "--bottom", "--cells", PANE_HEIGHT],
             Multiplexer::Kitty => vec!["launch", "--location", "vsplit", "--keep-focus", "--self"],
+            Multiplexer::Iterm2 => vec![
+                "-c",
+                r#"osascript -e 'tell application "iTerm2"
+    tell current session of current window
+        set sessionProfile to name of profile
+        set binPath to system attribute "DIRENV_INSTANT_BIN"
+        set stderrPath to system attribute "DIRENV_INSTANT_STDERR"
+        set socketPath to system attribute "DIRENV_INSTANT_SOCKET"
+        split horizontally with profile sessionProfile command (binPath & " watch " & stderrPath & " " & socketPath)
+    end tell
+end tell'"#,
+            ],
         };
 
         let mut command = Command::new(mux_bin);
@@ -75,16 +93,30 @@ impl Multiplexer {
             command.args(["@", "--to", kitty_listen_on.as_str()]);
         }
 
-        command
-            .args(mux_args)
-            .args([
+        command.args(mux_args);
+
+        // iTerm2 uses environment variables for arguments, others use command args
+        if *self == Multiplexer::Iterm2 {
+            command
+                .env("DIRENV_INSTANT_BIN", &bin)
+                .env(
+                    "DIRENV_INSTANT_STDERR",
+                    &ctx.temp_stderr.to_string_lossy().as_ref(),
+                )
+                .env(
+                    "DIRENV_INSTANT_SOCKET",
+                    &ctx.socket_path.to_string_lossy().as_ref(),
+                );
+        } else {
+            command.args([
                 &bin,
                 "watch",
                 &ctx.temp_stderr.to_string_lossy(),
                 &ctx.socket_path.to_string_lossy(),
-            ])
-            .spawn()
-            .map(|_| ())
+            ]);
+        }
+
+        command.spawn().map(|_| ())
     }
 }
 
